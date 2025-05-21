@@ -1,0 +1,13 @@
+**/target
+.classpath
+.project
+.settings/*
+dependency-reduced-pom.xml
+config
+bin/*
+*.graph_coord
+results.txt
+.DS_Store
+.git
+.idea
+constraints
