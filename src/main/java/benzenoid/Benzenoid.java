@@ -1,5 +1,5 @@
 package benzenoid;
-// ajout des etiquettes
+// ajout des etiquettess
 import classifier.Irregularity;
 import generator.patterns.Pattern;
 import generator.patterns.PatternLabel;
