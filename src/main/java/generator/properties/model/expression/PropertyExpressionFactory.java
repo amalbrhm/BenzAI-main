@@ -9,6 +9,8 @@ public enum PropertyExpressionFactory {
         String[] elements = string.split(Pattern.quote(" "));
         switch(elements[0]){
             case "hexagons":
+            case "pentagons": // ADDED
+            case "heptagons": // ADDED
             case "carbons":
             case "hydrogens":
             case "coronenoid":

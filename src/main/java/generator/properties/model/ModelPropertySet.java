@@ -18,6 +18,8 @@ public class ModelPropertySet extends PropertySet {
 		super();
 		setPropertyList(new ArrayList<>());
 		add(new HexagonNumberProperty());
+		add(new PentagonNumberProperty()); // ADDED
+		add(new HeptagonNumberProperty()); // ADDED
 		add(new CarbonNumberProperty());
 		add(new HydrogenNumberProperty());
 		add(new CatacondensedProperty());
