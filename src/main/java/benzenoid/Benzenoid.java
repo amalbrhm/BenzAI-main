@@ -107,8 +107,15 @@ public class Benzenoid implements Comparable<Benzenoid> {
 		// AJOUT/MODIFIÉ: Initialisation de hexagonCycleTypes
 		if (nbHexagons > 0) {
 			this.hexagonCycleTypes = new CycleType[nbHexagons];
-			for (int i = 0; i < nbHexagons; i++) {
-				this.hexagonCycleTypes[i] = CycleType.UNKNOWN; // Sera défini par determineAndSetCycleTypes
+			// Par défaut, on se basera sur la taille des cycles fournis
+			// Si inputHexagons n'est pas null et correctement peuplé
+			if (this.hexagons != null) {
+				determineAndSetCycleTypes(); // Appel pour définir les types de cycles à partir de this.hexagons[i].length
+			} else {
+				// Fallback si this.hexagons est null (ne devrait pas arriver avec ce constructeur)
+				for (int i = 0; i < nbHexagons; i++) {
+					this.hexagonCycleTypes[i] = CycleType.UNKNOWN;
+				}
 			}
 		} else {
 			this.hexagonCycleTypes = new CycleType[0];
@@ -122,12 +129,13 @@ public class Benzenoid implements Comparable<Benzenoid> {
 					StringBuilder builder = new StringBuilder();
 					builder.append("h ");
 					for (int u : hexagon_nodes) {
+						// Vérification supplémentaire pour la robustesse
 						if (u >= 0 && u < nodesRefs.length && nodesRefs[u] != null) {
 							Node node = nodesRefs[u];
 							builder.append(node.getX()).append("_").append(node.getY()).append(" ");
 						}
 					}
-					this.hexagonsString.add(builder.toString());
+					this.hexagonsString.add(builder.toString().trim()); // trim pour enlever l'espace final
 				}
 			}
 		}
@@ -152,6 +160,8 @@ public class Benzenoid implements Comparable<Benzenoid> {
 					 int[][] edgeMatrix, ArrayList<String> edgesString, ArrayList<String> hexagonsStringInput,
 					 Node[] nodesRefs, RelativeMatrix coords, int maxIndex) {
 
+		comparator = new NbHexagonsComparator(); // Ajouté pour la cohérence
+
 		this.nbCarbons = nbNodes;
 		this.nbBonds = nbEdges;
 		this.nbHexagons = nbHexagons;
@@ -164,16 +174,17 @@ public class Benzenoid implements Comparable<Benzenoid> {
 		this.inchi = "";
 		this.benzdbId = -1;
 
+		this.clarNumber = -1;
+		this.homo = 1000000;
+		this.lumo = 1000000;
+		this.moment = 1000000;
+
 		this.maxIndex = maxIndex;
 
 		// AJOUT/MODIFIÉ: Initialisation de this.hexagons et this.hexagonCycleTypes
 		if (nbHexagons > 0) {
 			this.hexagonCycleTypes = new CycleType[nbHexagons];
-			for (int i = 0; i < nbHexagons; i++) {
-				this.hexagonCycleTypes[i] = CycleType.UNKNOWN;
-			}
-			// MODIFIÉ: Initialiser la première dimension de this.hexagons.
-			// La deuxième dimension (taille de chaque face) sera définie dans initHexagons.
+			// this.hexagons sera initialisé par initHexagons basé sur hexagonsStringInput
 			this.hexagons = new int[nbHexagons][];
 		} else {
 			this.hexagonCycleTypes = new CycleType[0];
@@ -234,7 +245,33 @@ public class Benzenoid implements Comparable<Benzenoid> {
 						break;
 				}
 			} else {
+				// Si un cycle/face est null (ce qui ne devrait pas arriver si nbHexagons est correct),
+				// on le marque comme UNKNOWN.
 				this.setHexagonCycleType(i, CycleType.UNKNOWN);
+			}
+		}
+	}
+
+	/**
+	 * Permet de définir explicitement les types de chaque cycle/face.
+	 * Cela peut être utilisé si les types de cycles ne peuvent pas être
+	 * simplement déduits de la taille des entrées dans `this.hexagons`
+	 * ou si l'on veut forcer un type (par exemple, pour une approche par étiquettes).
+	 *
+	 * @param types Un tableau de CycleType de même taille que le nombre de faces (nbHexagons).
+	 * L'élément à l'index `i` correspond au type de la face `i`.
+	 */
+	public void setExplicitCycleTypes(CycleType[] types) {
+		if (types != null && types.length == this.nbHexagons) {
+			// Copie défensive pour éviter les modifications externes du tableau après son affectation
+			this.hexagonCycleTypes = Arrays.copyOf(types, types.length);
+		} else {
+			// Gérer le cas d'erreur : tableau de mauvaise taille ou null
+			// Ici, on réinitialise à UNKNOWN comme fallback, mais vous pourriez vouloir logger une erreur.
+			System.err.println("Attention : Le tableau de types de cycle fourni à setExplicitCycleTypes est invalide (null ou taille incorrecte). Réinitialisation à UNKNOWN.");
+			this.hexagonCycleTypes = new CycleType[this.nbHexagons];
+			for (int i = 0; i < this.nbHexagons; i++) {
+				this.hexagonCycleTypes[i] = CycleType.UNKNOWN;
 			}
 		}
 	}

@@ -17,6 +17,7 @@ import nogood.*;
 import org.chocosolver.solver.Model;
 import org.chocosolver.solver.Solver;
 import org.chocosolver.solver.search.strategy.selectors.values.IntDomainMax;
+import org.chocosolver.solver.search.strategy.selectors.values.IntDomainMin;
 import org.chocosolver.solver.search.strategy.selectors.variables.FirstFail;
 import org.chocosolver.solver.search.strategy.strategy.IntStrategy;
 import org.chocosolver.solver.variables.BoolVar;
@@ -35,6 +36,8 @@ import view.generator.boxes.HBoxSolverCriterion;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.util.*;
+import org.chocosolver.solver.constraints.Constraint;
+
 
 public class GeneralModel {
     private Solver chocoSolver;
@@ -44,9 +47,29 @@ public class GeneralModel {
 
     private final HashMap<String, Integer> variablesDegrees = new HashMap<>();
 
-    /*
-     * Application parameters
+    // Dans la section des déclarations de champs de GeneralModel.java
+
+    /**
+     * Stores pairs of base hexagon indices that can undergo a C6-C6 -> C5-C7 transformation.
      */
+    private ArrayList<Couple<Integer, Integer>> potentialTransformationSites;
+
+    /**
+     * Choco BoolVar array indicating if a transformation is active for each potential site.
+     */
+    private BoolVar[] transformationActiveVars;
+
+    /**
+     * Choco IntVar representing the number of C5 cycles to be generated via transformations.
+     * This will be constrained by PentagonNumberConstraint.
+     */
+    private IntVar nbPentagonsVar;
+
+    /**
+     * Choco IntVar representing the number of C7 cycles to be generated via transformations.
+     * This will be constrained by HeptagonNumberConstraint.
+     */
+    private IntVar nbHeptagonsVar;
 
     private final int nbMaxHexagons;
 
@@ -159,6 +182,7 @@ public class GeneralModel {
         //hexagonIndices = initializeHexagonIndices(diameter);
         initializeVariables();
         initializeConstraints();
+        initializeTransformationFramework(); // ADDED
         buildNodesRefs();
         System.out.print("");
     }
@@ -193,6 +217,109 @@ public class GeneralModel {
         nbVertices = chocoModel.intVar("nbVertices", 1, nbHexagonsCoronenoid);
         //graphDiameter = chocoModel.intVar("diameter", 0, diameter);
 
+    }
+
+    // Dans GeneralModel.java, à l'intérieur ou après initializeVariables()
+
+    private void initializeTransformationFramework() {
+        // Initialiser nbPentagonsVar et nbHeptagonsVar (sera fait par les classes de contraintes)
+        // Par exemple, dans PentagonNumberConstraint.buildVariables():
+        // generalModel.setNbPentagonsVar(chocoModel.intVar("nb_pentagons", 0, maxPotentialTransformations));
+        // Idem pour nbHeptagonsVar.
+
+        identifyPotentialTransformationSites(); // Vous devez implémenter cette méthode
+
+        if (potentialTransformationSites != null && !potentialTransformationSites.isEmpty()) {
+            transformationActiveVars = chocoModel.boolVarArray("transformationSite", potentialTransformationSites.size());
+        } else {
+            transformationActiveVars = new BoolVar[0]; // Aucun site potentiel
+        }
+
+        // S'assurer que nbPentagonsVar et nbHeptagonsVar sont bien initialisés par les contraintes correspondantes.
+        // Si ce n'est pas le cas, initialisez-les ici avec une borne supérieure appropriée.
+        // Par exemple, le nombre maximal de C5/C7 ne peut pas dépasser le nombre de sites.
+        if (this.nbPentagonsVar == null) {
+            int maxC5 = (potentialTransformationSites != null) ? potentialTransformationSites.size() : 0;
+            this.nbPentagonsVar = chocoModel.intVar("nb_pentagons_default", 0, maxC5);
+        }
+        if (this.nbHeptagonsVar == null) {
+            int maxC7 = (potentialTransformationSites != null) ? potentialTransformationSites.size() : 0;
+            this.nbHeptagonsVar = chocoModel.intVar("nb_heptagons_default", 0, maxC7);
+        }
+    }
+
+    /**
+     * Identifies all pairs of adjacent base hexagons that can serve as potential
+     * sites for a C6-C6 -> C5-C7 transformation.
+     * This method needs to be implemented based on your grid structure.
+     */
+    private void identifyPotentialTransformationSites() {
+        potentialTransformationSites = new ArrayList<>();
+        // Parcourir la grille d'hexagones (hexagonIndicesMatrix)
+        // Pour chaque hexagone h1, trouver ses voisins h2.
+        // Si la paire (h1, h2) est un site valide pour la transformation, l'ajouter.
+        // Attention à ne pas ajouter deux fois la même paire (ex: (h1,h2) et (h2,h1)).
+
+        // Exemple de logique (à adapter à votre structure hexagonIndicesMatrix/sideSharing)
+        if (hexagonIndicesMatrix == null || sideSharing == null) {
+            System.err.println("Hexagon grid not initialized before identifying transformation sites.");
+            return;
+        }
+
+        for (int i = 0; i < nbHexagonsCoronenoid; i++) { // Utilise le nombre d'hexagones dans la grille de base
+            int h1_sparse = getHexagonSparseIndex(i); // Obtenir l'index "sparse" si nécessaire
+            if (h1_sparse == -1) continue;
+
+            for (int j = i + 1; j < nbHexagonsCoronenoid; j++) {
+                int h2_sparse = getHexagonSparseIndex(j);
+                if (h2_sparse == -1) continue;
+
+                // Vérifier si h1_sparse et h2_sparse sont adjacents dans la grille de base
+                // sideSharing utilise des index "sparse"
+                if (sharesSide(h1_sparse, h2_sparse)) {
+                    potentialTransformationSites.add(new Couple<>(h1_sparse, h2_sparse));
+                }
+            }
+        }
+        System.out.println("Identified " + potentialTransformationSites.size() + " potential transformation sites.");
+    }
+
+    // Méthode utilitaire pour obtenir l'index "sparse" à partir de l'index compact de hexBoolVars
+// Ceci est un placeholder, adaptez-le à votre structure d'indexation.
+    public int getHexagonSparseIndex(int compactIndex) {
+        if (hexagonSparseIndicesTab != null && compactIndex < hexagonSparseIndicesTab.length) {
+            return hexagonSparseIndicesTab[compactIndex];
+        }
+        // Gérer le cas où l'index n'est pas valide ou si la table n'est pas initialisée
+        System.err.println("Warning: Could not get sparse index for compact index " + compactIndex);
+        return -1; // Ou lancez une exception
+    }
+
+
+    //Getter pour les variables de transformation (nécessaire pour les contraintes)
+    public BoolVar[] getTransformationActiveVars() {
+        return transformationActiveVars;
+    }
+
+    public ArrayList<Couple<Integer, Integer>> getPotentialTransformationSites() {
+        return potentialTransformationSites;
+    }
+
+    // Setters pour que les classes de contraintes puissent initialiser ces IntVars
+    public void setNbPentagonsVar(IntVar nbPentagonsVar) {
+        this.nbPentagonsVar = nbPentagonsVar;
+    }
+
+    public void setNbHeptagonsVar(IntVar nbHeptagonsVar) {
+        this.nbHeptagonsVar = nbHeptagonsVar;
+    }
+
+    public IntVar getNbPentagonsVar() {
+        return nbPentagonsVar;
+    }
+
+    public IntVar getNbHeptagonsVar() {
+        return nbHeptagonsVar;
     }
 
     private int[] buildHexagonSparseIndices(int[][] hexagonIndices, int diameter, int nbHexagonsCoronenoid) {
@@ -245,17 +372,70 @@ public class GeneralModel {
      */
     public void applyModelConstraint(ModelProperty modelProperty) {
         modelProperty.getConstraint().build(this, modelProperty.getExpressions());
+        postTransformationConstraints();
+    }
+    // Dans generator.GeneralModel.java
+
+    private void postTransformationAtomExistsConstraints() {
+        if (transformationActiveVars == null || potentialTransformationSites == null) { // Ajout d'une vérification
+            System.err.println("Transformation framework non initialisé (transformationActiveVars ou potentialTransformationSites est null).");
+            return;
+        }
+
+        for (int k = 0; k < potentialTransformationSites.size(); k++) {
+
+            // Vérification de sécurité pour la taille de transformationActiveVars
+            if (k >= transformationActiveVars.length) {
+                System.err.println("Index k (" + k + ") hors limites pour transformationActiveVars (taille: " + transformationActiveVars.length + ")");
+                continue;
+            }
+
+            Couple<Integer, Integer> site = potentialTransformationSites.get(k);
+            int h1_sparse_idx = site.getX(); // Index "sparse"
+            int h2_sparse_idx = site.getY(); // Index "sparse"
+
+            int h1_compact_idx = getHexagonCompactIndex(h1_sparse_idx);
+            int h2_compact_idx = getHexagonCompactIndex(h2_sparse_idx);
+
+            if (h1_compact_idx == -1 || h2_compact_idx == -1) {
+                // System.err.println("Index compact invalide pour le site (sparse): " + h1_sparse_idx + ", " + h2_sparse_idx);
+                continue;
+            }
+
+            // Assurer que les index compacts sont valides pour hexBoolVars
+            if (h1_compact_idx >= hexBoolVars.length || h2_compact_idx >= hexBoolVars.length) {
+                System.err.println("Index compact hors limites pour hexBoolVars. h1_compact_idx: " + h1_compact_idx + ", h2_compact_idx: " + h2_compact_idx + ", taille hexBoolVars: " + hexBoolVars.length);
+                continue;
+            }
+
+            // Définir la condition : la transformation au site k est active
+            Constraint condition = getProblem().arithm(transformationActiveVars[k], "=", 1);
+
+            // Définir la conséquence : les hexagones de base correspondants n'existent pas (en tant que C6)
+            Constraint consequence = getProblem().and(
+                    getProblem().arithm(hexBoolVars[h1_compact_idx], "=", 0),
+                    getProblem().arithm(hexBoolVars[h2_compact_idx], "=", 0)
+            );
+
+            // Appliquer la contrainte ifThen. Choco la poste ou l'enregistre.
+            getProblem().ifThen(condition, consequence);
+            // PAS DE .post() ici car ifThen semble retourner void dans votre configuration.
+        }
     }
 
     /***
      * Apply all the model constraints to the model
      */
+
     private void applyModelConstraints() {
         for (Property modelProperty : modelPropertySet)
             if (modelPropertySet.has(modelProperty.getId())) {
                 applyModelConstraint((ModelProperty) modelProperty);
             }
 
+        // Maintenant que nbPentagonsVar et nbHeptagonsVar devraient être initialisés par leurs contraintes respectives,
+        // postez les contraintes de transformation.
+        postTransformationConstraints(); // Assurez-vous que cette méthode existe et appelle les sous-méthodes
         if (!modelPropertySet.has("symmetry") && !modelPropertySet.has("rectangle") && !modelPropertySet.has("rhombus"))
             ConstraintBuilder.postBordersConstraints(this);
     }
@@ -472,65 +652,105 @@ public class GeneralModel {
 
     }
 
+    // Dans generator.GeneralModel.java
+
     public SolverResults solve() {
-        applyModelConstraints();
-        chocoModel.getSolver().setSearch(new IntStrategy(hexBoolVars, new FirstFail(chocoModel), new IntDomainMax()));
+        // Appliquer les contraintes de base du modèle et celles définies par l'utilisateur
+        applyModelConstraints(); // S'assure que nbPentagonsVar et nbHeptagonsVar sont initialisés
+        // et que les contraintes de transformation sont postées.
+
+        chocoSolver = chocoModel.getSolver(); // Obtenir le solveur après que toutes les variables et contraintes sont postées.
+
+        // Définir la stratégie de recherche
+        // Inclure hexBoolVars et transformationActiveVars si ce dernier est non nul et non vide
+        IntVar[] allDecisionVars;
+        if (transformationActiveVars != null && transformationActiveVars.length > 0) {
+            allDecisionVars = new IntVar[hexBoolVars.length + transformationActiveVars.length];
+            System.arraycopy(hexBoolVars, 0, allDecisionVars, 0, hexBoolVars.length);
+            System.arraycopy(transformationActiveVars, 0, allDecisionVars, hexBoolVars.length, transformationActiveVars.length);
+        } else {
+            allDecisionVars = hexBoolVars;
+        }
+        // Appliquer une stratégie de recherche par défaut. Elle peut être modifiée par des contraintes spécifiques.
+        chocoSolver.setSearch(new IntStrategy(allDecisionVars, new FirstFail(chocoModel), new IntDomainMin()));
+
+
+        // Permettre aux contraintes individuelles de modifier la stratégie de recherche si nécessaire.
+        // Attention : cela pourrait surcharger la stratégie définie ci-dessus.
+        // Il faut s'assurer que cela reste cohérent.
         for (Property modelProperty : modelPropertySet) {
-            if (modelProperty.hasExpressions())
+            if (modelProperty.hasExpressions()) {
                 ((ModelProperty) modelProperty).getConstraint().changeSolvingStrategy();
+            }
         }
 
-        chocoSolver = chocoModel.getSolver();
-        chocoSolver.limitSearch(() -> Stopper.STOP);
-
-        //applySolverProperties();
-        for (Property solverProperty : solverPropertySet)
-            if (solverProperty.hasExpressions())
+        // Appliquer les propriétés du solveur (limites de temps, nombre de solutions)
+        for (Property solverProperty : solverPropertySet) {
+            if (solverProperty.hasExpressions()) {
                 ((SolverProperty) solverProperty).getSpecifier().apply(chocoSolver, solverProperty.getExpressions().get(0));
+            }
+        }
 
         solverResults = new SolverResults();
-
         indexSolution = 0;
 
         long begin = System.currentTimeMillis();
 
-        chocoSolver.limitSearch(() -> Stopper.STOP);
-        Stopper.STOP = false;
+        chocoSolver.limitSearch(() -> Stopper.STOP); // Permet d'arrêter la recherche depuis l'extérieur
+        Stopper.STOP = false; // Réinitialiser le stopper
 
         while (chocoSolver.solve() && !generatorRun.isPaused()) {
-            ArrayList<Integer> verticesSolution = buildVerticesSolution();
+
+            // À ce stade, Choco a trouvé une affectation pour hexBoolVars et transformationActiveVars
+            // qui satisfait toutes les contraintes.
+
+            ArrayList<Integer> verticesSolution = buildVerticesSolution(); // Basé sur hexBoolVars
             String description = buildDescription(indexSolution);
+
+            // LA CONSTRUCTION DE LA MOLECULE DEVIENT PLUS COMPLEXE ICI
+            // Vous devez maintenant interpréter `verticesSolution` ET `transformationActiveVars`
+            // pour construire la géométrie atomique réelle avec les cycles C5, C6, C7.
+            // L'objet `Benzenoid` retourné par `buildMolecule` doit refléter cette nouvelle structure.
+            // Pour l'instant, on continue avec l'ancienne méthode, mais il faudra la réviser.
+
+            // ----- DÉBUT SECTION À REVOIR PROFONDÉMENT -----
             Benzenoid molecule = Benzenoid.buildMolecule(description, nbCrowns, indexSolution, verticesSolution);
+            // Après la création de la molécule de base (hexagonale), il faudrait :
+            // 1. Identifier les transformations C5/C7 actives (via transformationActiveVars).
+            // 2. Modifier la structure de 'molecule' pour refléter ces transformations
+            //    (supprimer/ajouter des atomes, changer la connectivité).
+            // 3. Recalculer les faces (cycles) de la molécule modifiée (C5, C6, C7).
+            // 4. Mettre à jour molecule.setExplicitCycleTypes(...)
+            // ----- FIN SECTION À REVOIR PROFONDÉMENT -----
 
-            if (molecule.respectPostProcessing(modelPropertySet)) {
+            if (molecule.respectPostProcessing(modelPropertySet)) { // Ce filtre doit aussi être conscient des C5/C7
                 solverResults.addMolecule(molecule);
-                if (inTestMode())
+                if (inTestMode()) {
                     nbTotalSolutions.set(nbTotalSolutions.get() + 1);
-                else
+                } else {
                     Platform.runLater(() -> nbTotalSolutions.set(nbTotalSolutions.get() + 1));
+                }
 
-                recordNoGoods();
+                recordNoGoods(); // Cette méthode doit aussi potentiellement être adaptée
 
+                // BenzenoidSolution est probablement pour une représentation purement hexagonale.
+                // À revoir si la structure interne change.
                 BenzenoidSolution solverSolution = new BenzenoidSolution(GUB, nbCrowns,
                         chocoModel.getName() + indexSolution, hexagonSparseIndicesTab);
 
                 solverResults.addSolution(solverSolution, description, nbCrowns);
-                solverResults.addVerticesSolution(verticesSolution);
+                solverResults.addVerticesSolution(verticesSolution); // Conserver la solution Choco brute pour le débogage
 
-                displaySolution(chocoSolver);
+                displaySolution(chocoSolver); // Pour le débogage
 
                 if (verbose) {
-
                     System.out.println("NO-GOOD");
-
                     for (ArrayList<Integer> ng : nogoods) {
                         for (Integer v : ng)
                             System.out.print(v + " ");
                         System.out.println();
                     }
-                } else
-                    verticesSolution.add(0);
-
+                }
                 indexSolution++;
             }
         }
@@ -551,8 +771,6 @@ public class GeneralModel {
         System.out.println("------");
         displayDegrees();
         return solverResults;
-
-
     }
 
     private boolean inTestMode() {
@@ -1439,5 +1657,59 @@ public class GeneralModel {
     public void setInTestMode(boolean inTestMode) {
         isInTestMode = inTestMode;
     }
+    // ADDED
+    // Dans GeneralModel.java
 
+    public void postTransformationConstraints() {
+        if (transformationActiveVars == null || transformationActiveVars.length == 0) {
+            // Si aucune transformation n'est possible ou configurée,
+            // et que l'utilisateur a demandé des C5/C7, cela devrait être une contradiction.
+            if (nbPentagonsVar != null && nbPentagonsVar.getUB() > 0) {
+                getProblem().arithm(nbPentagonsVar, "=", 0).post(); // Force 0 C5
+            }
+            if (nbHeptagonsVar != null && nbHeptagonsVar.getUB() > 0) {
+                getProblem().arithm(nbHeptagonsVar, "=", 0).post(); // Force 0 C7
+            }
+            return;
+        }
+
+        postTransformationAtomExistsConstraints();
+        postTransformationNonOverlapConstraints();
+        // Les contraintes sur nbPentagonsVar et nbHeptagonsVar sont postées
+        // par PentagonNumberConstraint et HeptagonNumberConstraint
+    }
+
+
+
+    private void postTransformationNonOverlapConstraints() {
+        for (int k = 0; k < potentialTransformationSites.size(); k++) {
+            for (int j = k + 1; j < potentialTransformationSites.size(); j++) {
+                Couple<Integer, Integer> site_k = potentialTransformationSites.get(k);
+                Couple<Integer, Integer> site_j = potentialTransformationSites.get(j);
+
+                if (sitesAreConflicting(site_k, site_j)) {
+                    // Si les sites k et j sont en conflit, ils ne peuvent pas être actifs en même temps.
+                    // transformationActiveVars[k] + transformationActiveVars[j] <= 1
+                    getProblem().arithm(transformationActiveVars[k], "+", transformationActiveVars[j], "<=", 1).post();
+                }
+            }
+        }
+    }
+
+    private boolean sitesAreConflicting(Couple<Integer, Integer> site_k, Couple<Integer, Integer> site_j) {
+        // site_k = (h_a, h_b), site_j = (h_c, h_d)
+        // Conflit simple: si les sites partagent un hexagone de base.
+        if (site_k.getX().equals(site_j.getX()) || site_k.getX().equals(site_j.getY()) ||
+                site_k.getY().equals(site_j.getX()) || site_k.getY().equals(site_j.getY())) {
+            return true;
+        }
+
+        // TODO: Logique plus avancée si nécessaire :
+        // Vérifier si un hexagone du site_k est adjacent à un hexagone du site_j
+        // (différent de l'adjacence qui définit le site lui-même).
+        // Par exemple, si h_a est adjacent à h_c (et (h_a,h_c) n'est pas site_j, etc.)
+        // La définition de "conflit" ici est cruciale et dépend de la géométrie de la transformation.
+        // Pour l'instant, on se limite au partage d'un hexagone de base.
+        return false;
+    }
 }
