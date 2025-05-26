@@ -16,8 +16,8 @@ public class DebugC5C7 {
         // Configuration minimale pour tester :
         // Forcer une petite grille, et demander 0 C5, 0 C7 pour commencer.
         // Cela devrait se comporter comme une génération normale d'hexagones C6.
-        //modelPropertySet.getById("coronenoid").addExpression(new BinaryNumericalExpression("coronenoid", "=", 2));
-        modelPropertySet.getById("hexagons").addExpression(new BinaryNumericalExpression("hexagons", "=", 7));
+        modelPropertySet.getById("coronenoid").addExpression(new BinaryNumericalExpression("coronenoid", "=", 2));
+        modelPropertySet.getById("hexagons").addExpression(new BinaryNumericalExpression("hexagons", "=", 1));
         modelPropertySet.getById("pentagons").addExpression(new BinaryNumericalExpression("pentagons", "=", 2));
         modelPropertySet.getById("heptagons").addExpression(new BinaryNumericalExpression("heptagons", "=", 2));
 
